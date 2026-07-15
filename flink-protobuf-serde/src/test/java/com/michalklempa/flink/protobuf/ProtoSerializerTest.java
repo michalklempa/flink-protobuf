@@ -2,13 +2,15 @@ package com.michalklempa.flink.protobuf;
 
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Timestamp;
+import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProtoSerializerTest {
 
@@ -52,16 +54,23 @@ class ProtoSerializerTest {
     }
 
     @Test
-    void snapshotRestoresCompatibleSerializer() {
+    void refusesState() {
         ProtoSerializer<Timestamp> serializer = new ProtoSerializer<>(Timestamp.class);
-        assertTrue(serializer.snapshotConfiguration()
-                .resolveSchemaCompatibility(new ProtoSerializer<>(Timestamp.class))
-                .isCompatibleAsIs());
+        assertThrows(UnsupportedOperationException.class, serializer::snapshotConfiguration);
+    }
+
+    @Test
+    void refusesStateDescriptor() {
+        ValueStateDescriptor<Timestamp> descriptor =
+                new ValueStateDescriptor<>("state", ProtoTypeInfo.proto(Timestamp.class));
+        descriptor.initializeSerializerUnlessSet(new ExecutionConfig());
+        assertThrows(UnsupportedOperationException.class,
+                () -> descriptor.getSerializer().snapshotConfiguration());
     }
 
     @Test
     void typeInfoCreatesSerializer() {
         assertEquals(new ProtoSerializer<>(Timestamp.class),
-                ProtoTypeInfo.proto(Timestamp.class).createSerializer(new org.apache.flink.api.common.ExecutionConfig()));
+                ProtoTypeInfo.proto(Timestamp.class).createSerializer(new ExecutionConfig()));
     }
 }

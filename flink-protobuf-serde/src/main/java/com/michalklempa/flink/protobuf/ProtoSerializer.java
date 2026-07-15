@@ -22,10 +22,6 @@ public class ProtoSerializer<T extends Message> extends TypeSerializer<T> {
         this.type = type;
     }
 
-    public Class<T> type() {
-        return type;
-    }
-
     @Override
     public boolean isImmutableType() {
         return true;
@@ -98,7 +94,11 @@ public class ProtoSerializer<T extends Message> extends TypeSerializer<T> {
 
     @Override
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
-        return new ProtoSnapshot<>(type);
+        throw new UnsupportedOperationException(
+                "ProtoSerializer supports operator-to-operator serialization only."
+                        + " State serialization is unsupported (no schema evolution):"
+                        + " do not use protobuf types in state descriptors, windows or joins"
+                        + " with checkpointing enabled. Type: " + type.getName());
     }
 
     @Override
