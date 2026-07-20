@@ -11,12 +11,17 @@ message in a DataStream job silently falls back to Kryo generic serialization.
 This project fills the gap:
 
 - **[`flink-protobuf-serde/`](flink-protobuf-serde)** — the library. `ProtoSerializer` (a
-  `TypeSerializer` doing `Message.toByteArray()` / `Parser.parseFrom(byte[])`), `ProtoSnapshot`,
-  and `ProtoTypeInfo`, generic over any `com.google.protobuf.Message`. Targets Flink 1.18,
-  Java 11. See its [README.md](flink-protobuf-serde/README.md) for publishing.
+  `TypeSerializer` doing `Message.toByteArray()` / `Parser.parseFrom(byte[])`), `ProtoTypeInfo`,
+  and `ProtoFactory` for global registration via `pipeline.serialization-config`, generic over
+  any `com.google.protobuf.Message`. Targets Flink 1.20, Java 11. See its
+  [README.md](flink-protobuf-serde/README.md) for publishing.
 - **[`flink-protobuf-serde-1-18-test/`](flink-protobuf-serde-1-18-test)** — a real-world test
-  job proving the serializer works on the wire; see its
+  job proving the serializer works on the wire on Flink 1.18; see its
   [README.md](flink-protobuf-serde-1-18-test/README.md).
+- **[`flink-protobuf-serde-1-20-test/`](flink-protobuf-serde-1-20-test)** — the same proof on
+  Flink 1.20, additionally exercising global registration via the FLIP-398
+  `pipeline.serialization-config` route; see its
+  [README.md](flink-protobuf-serde-1-20-test/README.md).
 
 ## Using flink-protobuf-serde in your project
 
@@ -45,7 +50,7 @@ with the dependency (once a release version is out, the `<repositories>` block i
     <dependency>
         <groupId>com.michalklempa</groupId>
         <artifactId>flink-protobuf-serde</artifactId>
-        <version>1.0.0-1.18-SNAPSHOT</version>
+        <version>1.0.0-1.20-SNAPSHOT</version>
     </dependency>
 </dependencies>
 ```
@@ -55,9 +60,38 @@ Flink and protobuf versions.
 
 ### Wiring into the application
 
-Flink 1.18 has no serializer autodiscovery, so attach `ProtoTypeInfo.proto(YourMessage.class)`
-explicitly wherever a protobuf-typed stream is produced. In source constructors that take a
-`TypeInformation` (DataGen example):
+**Global registration (Flink 1.19+)** — the FLIP-398 `pipeline.serialization-config` option.
+One entry registering `ProtoFactory` for `com.google.protobuf.AbstractMessage` (the superclass
+of every generated message) covers all protobuf types: plain
+`TypeInformation.of(YourMessage.class)`, lambda return-type extraction and POJO fields all
+resolve to `ProtoTypeInfo` automatically — no per-stream wiring.
+
+In the cluster `config.yaml` (zero code; the option needs the standard YAML parser, i.e.
+`config.yaml`, not the legacy `flink-conf.yaml`):
+
+```yaml
+pipeline.serialization-config:
+  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: com.michalklempa.flink.protobuf.ProtoFactory}
+```
+
+Or programmatically, through the same public option:
+
+```java
+Configuration configuration = new Configuration();
+configuration.set(PipelineOptions.SERIALIZATION_CONFIG, List.of(
+        "com.google.protobuf.AbstractMessage: {type: typeinfo, class: com.michalklempa.flink.protobuf.ProtoFactory}"));
+
+StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+```
+
+There is deliberately no `register()`-style code route in this library: the only programmatic
+seam, `TypeExtractor.registerFactory`, is `@Internal` API. The configuration route reaches the
+same registry through stable public surface — it is exactly what FLIP-398 designed for this
+purpose.
+
+**Explicit wiring** — works everywhere and is the only route on Flink 1.18 (no serializer
+autodiscovery there): attach `ProtoTypeInfo.proto(YourMessage.class)` wherever a protobuf-typed
+stream is produced. In source constructors that take a `TypeInformation` (DataGen example):
 
 ```java
 GeneratorFunction<Long, LatLng> generator = index -> LatLng.newBuilder()
@@ -93,7 +127,8 @@ StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironm
 env.getConfig().disableGenericTypes();
 ```
 
-With this set, any stream that would use Kryo fails fast at job translation:
+The config form is `pipeline.generic-types: false`. With this set, any stream that would use
+Kryo fails fast at job translation:
 
 ```
 UnsupportedOperationException: Generic types have been disabled in the ExecutionConfig
@@ -105,8 +140,14 @@ the flag on permanently is a good guard against accidental Kryo regressions.
 
 ## Status
 
-Operator-to-operator serialization on Flink 1.18 is implemented and verified. Keyed/operator
-state, schema evolution are out-of-scope of this project. Do not use Protobuf for Flink state.
+Operator-to-operator serialization is implemented and verified on Flink 1.18 and 1.20 (both
+the configuration route and explicit wiring on 1.20). The 1.18-built jar
+(`1.0.0-1.18-SNAPSHOT`) also runs unchanged on
+Flink 1.20 — 1.20's default `createSerializer(SerializerConfig)` delegates to the still-abstract
+`createSerializer(ExecutionConfig)`; this build overrides the `SerializerConfig` variant
+directly, which is what Flink 2.x requires (the `ExecutionConfig` overload is removed there).
+Keyed/operator state, schema evolution are out-of-scope of this project. Do not use Protobuf
+for Flink state.
 
 ## Related work
 
@@ -121,7 +162,7 @@ and whether Flink's Kryo kill-switch can be used at all.
 | [findify/flink-protobuf](https://github.com/findify/flink-protobuf)                   | `TypeInformation`       | ✅                              | Scala/ScalaPB-first, Flink 1.13 era, dormant since 2021                               |
 | Apache `flink-protobuf` (official)                                                    | Table/SQL format        | n/a                            | `RowData` ↔ bytes for SQL connectors; does not touch the DataStream path              |
 | Apache `flink-avro`                                                                   | `TypeInformation`       | ✅                              | the archetype — Avro only, includes state schema evolution                            |
-| **this project**                                                                      | `TypeInformation`       | ✅                              | plain Java, any `Message`, Flink 1.18                                                 |
+| **this project**                                                                      | `TypeInformation`       | ✅                              | plain Java, any `Message`, Flink 1.18 & 1.20                                          |
 
 **Kryo-hook family** (chill-protobuf, de.javakaffee's `ProtobufSerializer`): both wrap
 `toByteArray()`/`parseFrom()` in a `com.esotericsoftware.kryo.Serializer` registered via
