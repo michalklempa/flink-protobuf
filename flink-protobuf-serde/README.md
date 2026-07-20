@@ -5,6 +5,30 @@ Flink DataStream `TypeSerializer`/`TypeInformation` for arbitrary Protobuf messa
 
 ## Usage
 
+On Flink 1.19+, register `ProtoFactory` for `com.google.protobuf.AbstractMessage` via the
+FLIP-398 `pipeline.serialization-config` option — every protobuf message type then resolves to
+`ProtoTypeInfo` automatically (source constructors, lambda return types, POJO fields). In the
+cluster `config.yaml`:
+
+```yaml
+pipeline.serialization-config:
+  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: com.michalklempa.flink.protobuf.ProtoFactory}
+```
+
+Or programmatically through the same option:
+
+```java
+Configuration configuration = new Configuration();
+configuration.set(PipelineOptions.SERIALIZATION_CONFIG, List.of(
+        "com.google.protobuf.AbstractMessage: {type: typeinfo, class: com.michalklempa.flink.protobuf.ProtoFactory}"));
+
+StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+```
+
+Explicit wiring works everywhere and is the only route on Flink 1.18 (no autodiscovery there):
+attach `ProtoTypeInfo.proto(...)` wherever the type is produced (source constructors,
+`.returns(...)` after lambdas):
+
 ```java
 DataGeneratorSource<LatLng> source = new DataGeneratorSource<>(
         generator,
@@ -12,9 +36,6 @@ DataGeneratorSource<LatLng> source = new DataGeneratorSource<>(
         RateLimiterStrategy.perSecond(1),
         ProtoTypeInfo.proto(LatLng.class));
 ```
-
-On Flink 1.18, attach `ProtoTypeInfo.proto(...)` explicitly wherever the type is produced
-(source constructors, `.returns(...)` after lambdas). There is no autodiscovery on 1.18.
 
 ## Publishing to Maven Central
 

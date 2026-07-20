@@ -3,6 +3,7 @@ package com.michalklempa.flink.protobuf;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Timestamp;
 import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.api.common.serialization.SerializerConfigImpl;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
@@ -70,6 +71,8 @@ class ProtoSerializerTest {
 
     @Test
     void typeInfoCreatesSerializer() {
+        assertEquals(new ProtoSerializer<>(Timestamp.class),
+                ProtoTypeInfo.proto(Timestamp.class).createSerializer(new SerializerConfigImpl()));
         assertEquals(new ProtoSerializer<>(Timestamp.class),
                 ProtoTypeInfo.proto(Timestamp.class).createSerializer(new ExecutionConfig()));
     }

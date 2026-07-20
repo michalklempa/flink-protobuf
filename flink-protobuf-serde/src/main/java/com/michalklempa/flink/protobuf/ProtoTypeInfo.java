@@ -2,6 +2,7 @@ package com.michalklempa.flink.protobuf;
 
 import com.google.protobuf.Message;
 import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.api.common.serialization.SerializerConfig;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 
@@ -49,6 +50,11 @@ public class ProtoTypeInfo<T extends Message> extends TypeInformation<T> {
     @Override
     public boolean isKeyType() {
         return false;
+    }
+
+    @Override
+    public TypeSerializer<T> createSerializer(SerializerConfig config) {
+        return new ProtoSerializer<>(type);
     }
 
     @Override
