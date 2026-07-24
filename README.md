@@ -22,30 +22,14 @@ This project fills the gap:
 
 ### pom.xml
 
-Currently only a SNAPSHOT is published, so add the Central Portal snapshot repository together
-with the dependency (once a release version is out, the `<repositories>` block is unnecessary):
+Add to your `pom.xml`:
 
 ```xml
-
-<repositories>
-    <repository>
-        <id>central-portal-snapshots</id>
-        <name>Central Portal Snapshots</name>
-        <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-        <releases>
-            <enabled>false</enabled>
-        </releases>
-        <snapshots>
-            <enabled>true</enabled>
-        </snapshots>
-    </repository>
-</repositories>
-
 <dependencies>
     <dependency>
         <groupId>com.michalklempa</groupId>
         <artifactId>flink-protobuf-serde</artifactId>
-        <version>1.0.0-1.18-SNAPSHOT</version>
+        <version>1.0.1-1.18</version>
     </dependency>
 </dependencies>
 ```
@@ -55,9 +39,13 @@ Flink and protobuf versions.
 
 ### Wiring into the application
 
-Flink 1.18 has no serializer autodiscovery, so attach `ProtoTypeInfo.proto(YourMessage.class)`
-explicitly wherever a protobuf-typed stream is produced. In source constructors that take a
-`TypeInformation` (DataGen example):
+On Flink 1.18, protobuf fields require explicit type information — there is no autodiscovery.
+There are two ways to specify it:
+
+#### 1. Explicit `ProtoTypeInfo.proto()` for direct protobuf streams
+
+When a stream contains protobuf messages directly, attach `ProtoTypeInfo.proto(...)` to source
+constructors and `.returns(...)` after lambdas:
 
 ```java
 GeneratorFunction<Long, LatLng> generator = index -> LatLng.newBuilder()
@@ -75,13 +63,49 @@ DataStream<LatLng> positions =
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "position");
 ```
 
-After lambdas whose return type Flink cannot infer, use `.returns(...)`:
+After lambdas whose return type Flink cannot infer:
 
 ```java
 DataStream<LatLng> positions = input
         .map(value -> toLatLng(value))
         .returns(ProtoTypeInfo.proto(LatLng.class));
 ```
+
+#### 2. Annotation-based discovery for POJO fields with protobuf
+
+When a protobuf message is a field in a regular Java POJO, annotate it with `@TypeInfo(ProtoFactory.class)`.
+Flink discovers this annotation via reflection and applies the protobuf serializer to that field:
+
+```java
+public class PositionEvent {
+    public long timestamp;
+    
+    @TypeInfo(ProtoFactory.class)
+    public LatLng latLng;
+    
+    public PositionEvent() {}
+    
+    public PositionEvent(long timestamp, LatLng latLng) {
+        this.timestamp = timestamp;
+        this.latLng = latLng;
+    }
+}
+```
+
+When your stream produces `PositionEvent` objects (via a map, filter, or other transformation),
+Flink automatically discovers the `@TypeInfo` annotation on the `latLng` field and applies
+`ProtoFactory` to create the correct serializer:
+
+```java
+DataStream<LatLng> latLngs = /* source of LatLng protobuf messages */;
+
+DataStream<PositionEvent> events = latLngs.map(latLng -> 
+    new PositionEvent(System.currentTimeMillis(), latLng)
+);
+```
+
+The annotation eliminates the need for `.returns(ProtoTypeInfo.proto(...))` when the field type
+is already known through the POJO class structure.
 
 ### Verifying the serde is actually used
 

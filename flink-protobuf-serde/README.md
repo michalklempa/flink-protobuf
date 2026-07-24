@@ -1,21 +1,3 @@
-# flink-protobuf-serde
-
-Flink DataStream `TypeSerializer`/`TypeInformation` for arbitrary Protobuf messages
-(operator-to-operator serialization via `Message.toByteArray()` / `Parser.parseFrom(byte[])`).
-
-## Usage
-
-```java
-DataGeneratorSource<LatLng> source = new DataGeneratorSource<>(
-        generator,
-        Long.MAX_VALUE,
-        RateLimiterStrategy.perSecond(1),
-        ProtoTypeInfo.proto(LatLng.class));
-```
-
-On Flink 1.18, attach `ProtoTypeInfo.proto(...)` explicitly wherever the type is produced
-(source constructors, `.returns(...)` after lambdas). There is no autodiscovery on 1.18.
-
 ## Publishing to Maven Central
 
 Publishing goes through the Central Publisher Portal. Follow the official guide:
