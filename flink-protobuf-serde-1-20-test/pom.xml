@@ -17,7 +17,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <flink.version>1.20.4</flink.version>
-        <flink-protobuf-serde.version>1.0.0-1.20-SNAPSHOT</flink-protobuf-serde.version>
+        <flink-protobuf-serde.version>1.0.3-1.20-SNAPSHOT</flink-protobuf-serde.version>
         <protobuf.version>3.25.5</protobuf.version>
         <googleapi.version>2.37.1</googleapi.version>
         <log4j.version>2.17.1</log4j.version>
