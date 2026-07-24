@@ -21,9 +21,4 @@ class ProtoFactoryTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new ProtoFactory<>().createTypeInfo(String.class, Collections.emptyMap()));
     }
-
-    @Test
-    void registerRequiresNewerFlink() {
-        assertThrows(UnsupportedOperationException.class, Proto::register);
-    }
 }

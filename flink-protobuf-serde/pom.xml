@@ -6,7 +6,7 @@
 
     <groupId>com.michalklempa</groupId>
     <artifactId>flink-protobuf-serde</artifactId>
-    <version>1.0.1-1.18</version>
+    <version>1.0.2-1.18</version>
     <packaging>jar</packaging>
 
     <name>flink-protobuf-serde</name>
