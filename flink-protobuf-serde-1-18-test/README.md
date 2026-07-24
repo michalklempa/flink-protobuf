@@ -1,60 +1,62 @@
 # flink-protobuf-serde-1-18-test
 
-Self-contained Flink 1.18 streaming job whose sole purpose is to prove that
+Self-contained Flink 1.18 streaming jobs that prove
 [`flink-protobuf-serde`](../flink-protobuf-serde) actually serializes protobuf messages on the
 operator-to-operator wire — not just in unit tests.
 
-## The pipeline
+## The Job
+
+Job.java demonstrates both usage patterns for protobuf serialization in a single pipeline:
 
 ```
-DataGeneratorSource<LatLng>  --(network exchange)-->  map(LatLng -> ProtoJSON)  -->  print
+DataGeneratorSource<LatLng> (explicit ProtoTypeInfo.proto())
+  --> map(LatLng -> ProtoJSON string)  
+  --> map(parse JSON back to LatLng, wrap in PositionEvent)
+  --> map(format and print)
 ```
 
-- The source generates one `google.type.LatLng` per second (`RateLimiterStrategy.perSecond(1)`),
-  a publicly published protobuf class from `proto-google-common-protos` — no dependency on any
-  other project in this repository.
-- The source is constructed with `ProtoTypeInfo.proto(LatLng.class)`, which plugs
-  `ProtoSerializer` into Flink's type system for the stream.
-- The map operator converts each message to JSON via `JsonFormat` and prints it.
+**Explicit `ProtoTypeInfo.proto()` usage:**
+- The source generates one `google.type.LatLng` per second with explicit type info:
+  `ProtoTypeInfo.proto(LatLng.class)`
 
-## How this proves serialization works
+**Annotation-based `@TypeInfo(ProtoFactory.class)` discovery:**
+- Second map parses JSON back into `LatLng` and wraps it in a `PositionEvent` POJO
+- `PositionEvent` has its `latLng` field annotated with `@TypeInfo(ProtoFactory.class)`, so Flink
+  automatically discovers and applies the protobuf serializer to that field
 
-A Flink job can appear to work while never exercising a serializer at all: when consecutive
-operators are **chained**, records are passed as Java object references within one task and no
-serialization happens. A wrong serializer can also hide behind Flink's silent **Kryo fallback**.
-This job closes both loopholes:
+**Output:**
+- Final map formats with timestamp and prints the result
 
-1. **`env.disableOperatorChaining()`** — forces source and map into separate tasks. Every record
-   must cross a real task-to-task exchange, which means every record is written by
-   `ProtoSerializer.serialize()` (`Message.toByteArray()`) and read back by
-   `ProtoSerializer.deserialize()` (`Parser.parseFrom(byte[])`). If the serializer round-trip
-   corrupted anything, the JSON output would be wrong or the job would crash.
+## How serialization is verified
 
-2. **`env.getConfig().disableGenericTypes()`** — makes Flink throw instead of falling back to
-   Kryo for any type it cannot handle natively. If `ProtoTypeInfo` were not wired in, the job
-   would fail at translation time with:
+Both jobs close the loopholes that can hide serialization failures:
+
+1. **`env.disableOperatorChaining()`** — forces operators into separate tasks. Every record must
+   cross a task-to-task exchange via the network serializer. If the serializer round-trip
+   corrupted anything, the output would be wrong or the job would crash.
+
+2. **`env.getConfig().disableGenericTypes()`** — makes Flink fail at translation time if any type
+   falls back to Kryo. Without this flag, a missing or wrong serializer is silent. With it, any
+   type that isn't handled natively throws:
 
    ```
    UnsupportedOperationException: Generic types have been disabled in the ExecutionConfig
    and type com.google.type.LatLng is treated as a generic type.
    ```
 
-   This is not hypothetical — replacing `ProtoTypeInfo.proto(LatLng.class)` with plain
-   `TypeInformation.of(LatLng.class)` produces exactly this failure on Flink 1.18 (there is no
-   serializer autodiscovery in 1.18), which doubles as the negative control for this test.
+Successful output proves that protobuf records were serialized by `ProtoSerializer.serialize()`
+(`Message.toByteArray()`), shipped as bytes, and deserialized by `ProtoSerializer.deserialize()`
+(`Parser.parseFrom(byte[])`), with Kryo provably out of the picture.
 
-Successful output therefore means: records were generated as protobuf objects, serialized to
-protobuf bytes, shipped across a task boundary, deserialized back, and converted to JSON —
-with Kryo provably out of the picture:
+Expected output (coordinates drift by a fixed step per generated index):
 
 ```
-{"latitude":48.14,"longitude":17.1}
-{"latitude":48.140100000000004,"longitude":17.1002}
-{"latitude":48.1402,"longitude":17.1004}
+Timestamp: 1234567890000, {"latitude":48.14,"longitude":17.1}
+Timestamp: 1234567890001, {"latitude":48.140100000000004,"longitude":17.1002}
+Timestamp: 1234567890002, {"latitude":48.1402,"longitude":17.1004}
 ```
 
-The coordinates drift by a fixed step per generated index, so gaps or repetitions in the
-sequence would be visible directly in the output.
+Gaps or repetitions in the sequence would be visible directly in the output.
 
 ## Running
 

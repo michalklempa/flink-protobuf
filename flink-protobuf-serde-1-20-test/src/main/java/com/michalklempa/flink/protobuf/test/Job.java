@@ -36,8 +36,16 @@ public class Job {
                 RateLimiterStrategy.perSecond(1),
                 TypeInformation.of(LatLng.class));
 
+
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "position")
-                .map(value -> JsonFormat.printer().omittingInsignificantWhitespace().print(value))
+                .map(latLng -> JsonFormat.printer().omittingInsignificantWhitespace().print(latLng))
+                .map(json -> {
+                    LatLng.Builder builder = LatLng.newBuilder();
+                    JsonFormat.parser().merge(json, builder);
+                    return new PositionEvent(System.currentTimeMillis(), builder.build());
+                })
+                .map(event -> "Timestamp: " + event.timestamp + ", " +
+                        JsonFormat.printer().omittingInsignificantWhitespace().print(event.latLng))
                 .print();
 
         env.execute("flink-protobuf-serde-1-20-test");
