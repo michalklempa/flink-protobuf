@@ -46,7 +46,7 @@ Add to your `pom.xml`:
     <dependency>
         <groupId>com.michalklempa</groupId>
         <artifactId>flink-protobuf-serde</artifactId>
-        <version>1.0.1-1.18</version>
+        <version>1.0.2-1.18</version>
     </dependency>
 </dependencies>
 ```
