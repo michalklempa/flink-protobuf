@@ -8,6 +8,13 @@ import org.apache.flink.api.connector.source.util.ratelimit.RateLimiterStrategy;
 import org.apache.flink.connector.datagen.source.DataGeneratorSource;
 import org.apache.flink.connector.datagen.source.GeneratorFunction;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.windowing.ProcessAllWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+import org.apache.flink.util.Collector;
+
+import java.time.Instant;
 
 public class Job {
 
@@ -16,6 +23,7 @@ public class Job {
         env.setParallelism(1);
         env.disableOperatorChaining();
         env.getConfig().disableGenericTypes();
+        env.enableCheckpointing(5000L);
 
         GeneratorFunction<Long, LatLng> generator = index -> LatLng.newBuilder()
                 .setLatitude(48.14 + index * 0.0001)
@@ -35,7 +43,17 @@ public class Job {
                     JsonFormat.parser().merge(json, builder);
                     return new PositionEvent(System.currentTimeMillis(), builder.build());
                 })
-                .map(event -> "Timestamp: " + event.timestamp + ", " +
+                .assignTimestampsAndWatermarks(WatermarkStrategy.<PositionEvent>forMonotonousTimestamps().withTimestampAssigner((element, recordTimestamp) -> element.timestamp))
+                .windowAll(TumblingEventTimeWindows.of(Time.seconds(15L)))
+                .process(new ProcessAllWindowFunction<PositionEvent, PositionEvent, TimeWindow>() {
+                    @Override
+                    public void process(ProcessAllWindowFunction<PositionEvent, PositionEvent, TimeWindow>.Context context, Iterable<PositionEvent> elements, Collector<PositionEvent> out) throws Exception {
+                        if (elements.iterator().hasNext()) {
+                            out.collect(elements.iterator().next());
+                        }
+                    }
+                })
+                .map(event -> "Timestamp: " + Instant.ofEpochMilli(event.timestamp) + ", " +
                         JsonFormat.printer().omittingInsignificantWhitespace().print(event.latLng))
                 .print();
 

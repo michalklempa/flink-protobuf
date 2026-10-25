@@ -4,6 +4,8 @@ import com.google.type.LatLng;
 import com.michalklempa.flink.protobuf.ProtoFactory;
 import org.apache.flink.api.common.typeinfo.TypeInfo;
 
+import java.time.Instant;
+
 public class PositionEvent {
 
     public long timestamp;
@@ -22,7 +24,7 @@ public class PositionEvent {
     @Override
     public String toString() {
         return "PositionEvent{" +
-                "timestamp=" + timestamp +
+                "timestamp=" + Instant.ofEpochMilli(timestamp) +
                 ", position=" + latLng +
                 '}';
     }
