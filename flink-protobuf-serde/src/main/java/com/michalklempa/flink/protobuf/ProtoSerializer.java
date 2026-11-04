@@ -9,17 +9,34 @@ import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.util.FlinkRuntimeException;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
 
 public class ProtoSerializer<T extends Message> extends TypeSerializer<T> {
 
     private static final long serialVersionUID = 1L;
 
     private final Class<T> type;
+    private final Set<String> formerNames;
     private transient Parser<T> parser;
 
     public ProtoSerializer(Class<T> type) {
+        this(type, Collections.emptySet());
+    }
+
+    public ProtoSerializer(Class<T> type, Collection<String> formerNames) {
         this.type = type;
+        this.formerNames = Set.copyOf(formerNames);
+    }
+
+    public Class<T> getType() {
+        return type;
+    }
+
+    public Set<String> getFormerNames() {
+        return formerNames;
     }
 
     @Override
@@ -29,7 +46,7 @@ public class ProtoSerializer<T extends Message> extends TypeSerializer<T> {
 
     @Override
     public TypeSerializer<T> duplicate() {
-        return new ProtoSerializer<>(type);
+        return new ProtoSerializer<>(type, formerNames);
     }
 
     @Override
@@ -94,11 +111,7 @@ public class ProtoSerializer<T extends Message> extends TypeSerializer<T> {
 
     @Override
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
-        throw new UnsupportedOperationException(
-                "ProtoSerializer supports operator-to-operator serialization only."
-                        + " State serialization is unsupported (no schema evolution):"
-                        + " do not use protobuf types in state descriptors, windows or joins"
-                        + " with checkpointing enabled. Type: " + type.getName());
+        return new ProtoSerializerSnapshot<>(type);
     }
 
     @Override

@@ -11,8 +11,8 @@ message in a DataStream job silently falls back to Kryo generic serialization.
 This project fills the gap:
 
 - **[`flink-protobuf-serde/`](flink-protobuf-serde)** — the library. `ProtoSerializer` (a
-  `TypeSerializer` doing `Message.toByteArray()` / `Parser.parseFrom(byte[])`), `ProtoSnapshot`,
-  and `ProtoTypeInfo`, generic over any `com.google.protobuf.Message`. Targets Flink 1.18,
+  `TypeSerializer` doing `Message.toByteArray()` / `Parser.parseFrom(byte[])`),
+  `ProtoSerializerSnapshot`, and `ProtoTypeInfo`, generic over any `com.google.protobuf.Message`. Targets Flink 1.18,
   Java 11. See its [README.md](flink-protobuf-serde/README.md) for publishing.
 - **[`flink-protobuf-serde-1-18-test/`](flink-protobuf-serde-1-18-test)** — a real-world test
   job proving the serializer works on the wire; see its
@@ -29,7 +29,7 @@ Add to your `pom.xml`:
     <dependency>
         <groupId>com.michalklempa</groupId>
         <artifactId>flink-protobuf-serde</artifactId>
-        <version>1.0.1-1.18</version>
+        <version>1.1.0-1.18</version>
     </dependency>
 </dependencies>
 ```
@@ -127,10 +127,40 @@ and type com.google.type.LatLng is treated as a generic type.
 If the job starts, every protobuf record on the wire goes through `ProtoSerializer`. Keeping
 the flag on permanently is a good guard against accidental Kryo regressions.
 
+## Protobuf in Flink state
+
+Protobuf types work in keyed and operator state (`ValueState`, `MapState`, windows, joins) with
+checkpointing enabled. The serializer snapshot written into every checkpoint and savepoint holds
+only the fully qualified name of the message class. On restore the new serializer is
+`compatibleAsIs` when its message class has the same name; any other class, or a non-protobuf
+serializer, is `incompatible` and the restore fails.
+
+No schema check happens on restore: protobuf bytes are self-describing, so Flink parses the old
+bytes with whatever class the state descriptor names. Field additions and removals follow the
+usual protobuf rules; field number reuse, type changes and `required` changes produce wrong data
+or `InvalidProtocolBufferException` at runtime. Schema discipline is yours.
+
+### Restoring into a renamed or moved message class
+
+When the message class was renamed or repackaged, or the old class is no longer on the
+classpath, declare the former names explicitly:
+
+```java
+ValueStateDescriptor<NewEvent> descriptor = new ValueStateDescriptor<>(
+        "event", ProtoTypeInfo.proto(NewEvent.class, "com.example.legacy.OldEvent"));
+```
+
+A former name is accepted as `compatibleAsIs` only when it is listed. Former names do not take
+part in `equals`/`hashCode` of the type information or the serializer, and the next checkpoint is
+written with the new class name, so the declaration can be removed after one successful
+checkpoint or savepoint. The `@TypeInfo(ProtoFactory.class)` annotation and the
+`pipeline.serialization-config` route have no way to pass former names; use
+`ProtoTypeInfo.proto(...)` in the state descriptor for a migration.
+
 ## Status
 
-Operator-to-operator serialization on Flink 1.18 is implemented and verified. Keyed/operator
-state, schema evolution are out-of-scope of this project. Do not use Protobuf for Flink state.
+Operator-to-operator serialization and state serialization on Flink 1.18 are implemented.
+Schema evolution is left to protobuf wire-format rules; the snapshot carries no descriptor.
 
 ## Related work
 
@@ -171,3 +201,13 @@ instance parameter at every call site).
 ## License
 
 [Apache-2.0](LICENSE)
+
+## Notes for Claude
+
+- No parent pom: each directory is an independent Maven project (Java 11, Maven 3.9.10 via `.sdkmanrc`/`.envrc`). Version suffix of the library is the target Flink, e.g. `1.0.3-1.20`. Branches `flink-1.18` and `flink-1.20` carry per-version work; `.claude/PLAN.md` has design decisions and open tasks.
+- The `*-test` modules depend on a released serde artifact, not the sibling source. Run `mvn install` in `flink-protobuf-serde/` first when testing an unreleased version.
+- Library tests (in `flink-protobuf-serde/`): `mvn clean test`, `mvn test -Dtest=ProtoSerializerTest#methodName`. Release: `mvn clean deploy -Prelease`. Test jobs have no unit tests; success is the job printing ProtoJSON.
+- `ProtoSerializerSnapshot` writes only the message class name (version 1). Any change to the written layout needs a new version and a `readSnapshot` branch for every version ever shipped. Compatibility compares class names as strings, never `Class` identity, so a missing old class still restores when declared as a former name.
+- Flink-version differences are confined to `createSerializer`: 1.18 takes `ExecutionConfig`, 1.20 overrides the `SerializerConfig` overload. Keep both lines consistent.
+- Global registration works only on 1.19+ via `pipeline.serialization-config` (FLIP-398) mapping `com.google.protobuf.AbstractMessage` to `ProtoFactory`. Do not add a `register()` calling `TypeExtractor.registerFactory` (`@Internal`, removed on purpose). On 1.18 use `ProtoTypeInfo.proto(...)` / `.returns(...)`.
+- Unit tests use well-known types (e.g. `Timestamp`), so `protoc` is not needed. Test jobs must keep `disableOperatorChaining()` and `disableGenericTypes()`; removing the serialization-config entry in the 1.20 job is the negative control and must fail at translation time.

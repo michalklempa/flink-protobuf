@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProtoSerializerTest {
 
@@ -54,18 +54,17 @@ class ProtoSerializerTest {
     }
 
     @Test
-    void refusesState() {
+    void snapshotsConfiguration() {
         ProtoSerializer<Timestamp> serializer = new ProtoSerializer<>(Timestamp.class);
-        assertThrows(UnsupportedOperationException.class, serializer::snapshotConfiguration);
+        assertTrue(serializer.snapshotConfiguration() instanceof ProtoSerializerSnapshot);
     }
 
     @Test
-    void refusesStateDescriptor() {
+    void stateDescriptorSnapshotsConfiguration() {
         ValueStateDescriptor<Timestamp> descriptor =
                 new ValueStateDescriptor<>("state", ProtoTypeInfo.proto(Timestamp.class));
         descriptor.initializeSerializerUnlessSet(new ExecutionConfig());
-        assertThrows(UnsupportedOperationException.class,
-                () -> descriptor.getSerializer().snapshotConfiguration());
+        assertTrue(descriptor.getSerializer().snapshotConfiguration() instanceof ProtoSerializerSnapshot);
     }
 
     @Test
