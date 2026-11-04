@@ -20,6 +20,7 @@ public class SumJob {
         env.setParallelism(1);
         env.disableOperatorChaining();
         env.getConfig().disableGenericTypes();
+        env.enableCheckpointing(15000L);
 
         GeneratorFunction<Long, LatLng> generator = index -> LatLng.newBuilder()
                 .setLatitude(48.14 + index * 0.0001)
