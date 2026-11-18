@@ -22,7 +22,9 @@ This project fills the gap:
 
 ### pom.xml
 
-Add to your `pom.xml`:
+Add to your `pom.xml`, matching your Flink version:
+
+#### Flink 1.18
 
 ```xml
 <dependencies>
@@ -30,6 +32,18 @@ Add to your `pom.xml`:
         <groupId>com.michalklempa</groupId>
         <artifactId>flink-protobuf-serde</artifactId>
         <version>1.1.0-1.18</version>
+    </dependency>
+</dependencies>
+```
+
+#### Flink 1.20
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>com.michalklempa</groupId>
+        <artifactId>flink-protobuf-serde</artifactId>
+        <version>1.0.3-1.20</version>
     </dependency>
 </dependencies>
 ```
